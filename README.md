@@ -68,8 +68,8 @@ Micrositio estático, independiente de GarBa Advisor, diseñado para publicarse 
 ### Descargas
 
 - CSV generado en el navegador.
+- Excel nativo (.xlsx) generado en el navegador con SheetJS (`xlsx.full.min.js` vía CDN), sin backend — disponible en las tres herramientas.
 - PDF generado del lado del cliente, sin backend.
-- No se prometerá Excel nativo hasta validar una librería compatible y estable con GitHub Pages.
 
 ## Experiencia privada de acceso
 

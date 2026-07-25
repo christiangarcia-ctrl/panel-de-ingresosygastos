@@ -227,6 +227,48 @@
   byId('scenarioContribution').addEventListener('input',updateScenario);byId('scenarioYears').addEventListener('input',updateScenario);byId('resetScenario').addEventListener('click',()=>{byId('scenarioContribution').value=0;byId('scenarioYears').value=0;updateScenario();});
 
   byId('downloadCsv').addEventListener('click',()=>{const r=projection(0);const rows=[['Campo','Valor'],...Object.entries(state).filter(([k])=>k!=='step').map(([k,v])=>[k,v]),['ppr_proyectado_real',r.pprFuture/Math.pow(1+ASSUMPTIONS.inflation,r.years)],['afore_proyectado_real',r.aforeFuture/Math.pow(1+ASSUMPTIONS.inflation,r.years)],['vivienda_proyectada_real',r.homeEquityFuture/Math.pow(1+ASSUMPTIONS.inflation,r.years)],['ingreso_mensual_estimado',r.monthlyIncome],['gastos_temporales_que_terminan',futureExpenseRelief()],['ingresos_futuros',futureIncomeTotal()],['fecha',new Date().toLocaleDateString('es-MX')]];const csv=rows.map(row=>row.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(',')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`ruta-de-retiro-${firstName.toLowerCase()}.csv`;a.click();URL.revokeObjectURL(url);});
+  byId('downloadExcel').addEventListener('click',()=>{
+    if(typeof XLSX==='undefined'){alertFriendly('No se pudo cargar el motor de Excel. Intenta de nuevo en unos segundos.');return;}
+    const r=projection(0,0),goal=num(state.retirementIncomeGoal),coverage=goal?Math.min(999,Math.round(r.monthlyIncome/goal*100)):0;
+    const pprReal=r.pprFuture/Math.pow(1+ASSUMPTIONS.inflation,r.years),aforeReal=r.aforeFuture/Math.pow(1+ASSUMPTIONS.inflation,r.years),homeReal=r.homeEquityFuture/Math.pow(1+ASSUMPTIONS.inflation,r.years);
+    const summaryRows=[
+      ['Mi Ruta de Retiro',firstName],
+      ['Fecha',new Date().toLocaleDateString('es-MX')],
+      [],
+      ['Concepto','Valor'],
+      ['Edad actual',num(state.age)],
+      ['Edad objetivo de retiro',num(state.retirementAge)],
+      ['Horizonte (años)',r.years],
+      [],
+      ['PPR proyectado (dinero de hoy)',pprReal],
+      ['AFORE proyectado (dinero de hoy)',aforeReal],
+      ['Vivienda neta proyectada (dinero de hoy)',homeReal],
+      ['Ingreso futuro registrado (pensión, rentas)',r.futureIncome],
+      ['Patrimonio total proyectado',r.totalPatrimonyReal],
+      [],
+      ['Meta mensual de retiro',goal],
+      ['Ingreso mensual estimado',r.monthlyIncome],
+      ['Avance estimado hacia la meta',`${coverage}%`],
+      ['Gastos temporales que podrían liberarse',futureExpenseRelief()],
+      [],
+      ['Esta proyección usa supuestos y no representa una garantía de rendimiento o ingreso futuro.']
+    ];
+    const wsSummary=XLSX.utils.aoa_to_sheet(summaryRows);
+    wsSummary['!cols']=[{wch:38},{wch:20}];
+
+    const scenarioRows=[['Escenario','Aportación adicional mensual','Años adicionales','Ingreso mensual estimado']];
+    [[0,0],[1000,0],[2000,0],[0,2],[1000,2]].forEach(([extra,extraYears])=>{
+      const s=projection(extra,extraYears);
+      scenarioRows.push([extra||extraYears?`+${money.format(extra)} / +${extraYears} años`:'Escenario actual',extra,extraYears,Math.round(s.monthlyIncome)]);
+    });
+    const wsScenarios=XLSX.utils.aoa_to_sheet(scenarioRows);
+    wsScenarios['!cols']=[{wch:28},{wch:24},{wch:16},{wch:24}];
+
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,wsSummary,'Mi Ruta de Retiro');
+    XLSX.utils.book_append_sheet(wb,wsScenarios,'Escenarios');
+    XLSX.writeFile(wb,`ruta-de-retiro-${firstName.toLowerCase()}.xlsx`);
+  });
   byId('printReport').addEventListener('click',()=>window.print());
 
   const panels={
@@ -235,12 +277,13 @@
     scopeHelp:{kicker:'Perspectiva',title:'Individual, pareja u hogar',body:'<p>Los ingresos y gastos pueden revisarse de manera conjunta. Los productos personales, como PPR y AFORE, conservan su titularidad.</p>'},
     homeHelp:{kicker:'Vivienda',title:'Patrimonio no siempre significa ingreso',body:`<p>La vivienda se proyecta con una referencia nacional histórica de apreciación y se separa del flujo mensual.</p><p>Cuando faltan datos técnicos de la hipoteca, la metodología usa una referencia de 11% anual solo para contextualizar el crédito. En esta V1 se prioriza la fecha estimada de liquidación que indiques.</p>`},
     lifeChangesHelp:{kicker:'Tu vida cambia',title:'La fotografía de hoy no es permanente',body:'<p>Una hipoteca, colegiaturas o ciertos créditos pueden terminar antes de tu retiro. Identificarlos evita asumir que necesitarás el mismo gasto durante toda tu vida.</p><p>Los ingresos futuros también son estimaciones editables.</p>'},
-    manageData:{kicker:'Tu información',title:'Administrar mi información',body:`<p class="manage-intro">Tú tienes el control. Elige qué deseas hacer con la información guardada en este dispositivo.</p><div class="manage-actions"><button type="button" class="manage-action" id="manageDownloadData"><span class="manage-action__icon">↓</span><span><strong>Descargar mis datos</strong><small>Guarda una copia en CSV compatible con Excel.</small></span><i>→</i></button><button type="button" class="manage-action" id="manageDownloadReport"><span class="manage-action__icon">▤</span><span><strong>Descargar mi reporte</strong><small>Imprime o guarda como PDF tu lectura actual.</small></span><i>→</i></button><button type="button" class="manage-action manage-action--restart" id="clearRetirementData"><span class="manage-action__icon">↻</span><span><strong>Comenzar un nuevo análisis</strong><small>Elimina únicamente la información de Mi Ruta de Retiro.</small></span><i>→</i></button><button type="button" class="manage-action manage-action--danger" id="clearAllGarbaData"><span class="manage-action__icon">⌫</span><span><strong>Eliminar toda mi información</strong><small>Borra el acceso y los datos de todas las herramientas.</small></span><i>→</i></button><button type="button" class="manage-action" id="changeGarbaUser"><span class="manage-action__icon">◎</span><span><strong>Cambiar de usuario</strong><small>Conserva los análisis, pero vuelve a la bienvenida.</small></span><i>→</i></button></div><p class="manage-footnote">Tus datos permanecen localmente en este dispositivo.</p>`}
+    manageData:{kicker:'Tu información',title:'Administrar mi información',body:`<p class="manage-intro">Tú tienes el control. Elige qué deseas hacer con la información guardada en este dispositivo.</p><div class="manage-actions"><button type="button" class="manage-action" id="manageDownloadData"><span class="manage-action__icon">↓</span><span><strong>Descargar mis datos</strong><small>Guarda una copia en CSV compatible con Excel.</small></span><i>→</i></button><button type="button" class="manage-action" id="manageDownloadExcel"><span class="manage-action__icon">▦</span><span><strong>Descargar Excel</strong><small>Incluye el detalle de tu proyección y escenarios.</small></span><i>→</i></button><button type="button" class="manage-action" id="manageDownloadReport"><span class="manage-action__icon">▤</span><span><strong>Descargar mi reporte</strong><small>Imprime o guarda como PDF tu lectura actual.</small></span><i>→</i></button><button type="button" class="manage-action manage-action--restart" id="clearRetirementData"><span class="manage-action__icon">↻</span><span><strong>Comenzar un nuevo análisis</strong><small>Elimina únicamente la información de Mi Ruta de Retiro.</small></span><i>→</i></button><button type="button" class="manage-action manage-action--danger" id="clearAllGarbaData"><span class="manage-action__icon">⌫</span><span><strong>Eliminar toda mi información</strong><small>Borra el acceso y los datos de todas las herramientas.</small></span><i>→</i></button><button type="button" class="manage-action" id="changeGarbaUser"><span class="manage-action__icon">◎</span><span><strong>Cambiar de usuario</strong><small>Conserva los análisis, pero vuelve a la bienvenida.</small></span><i>→</i></button></div><p class="manage-footnote">Tus datos permanecen localmente en este dispositivo.</p>`}
   };
   function openPanel(key){const p=panels[key]||panels.guide;byId('panelKicker').textContent=p.kicker;byId('panelTitle').textContent=p.title;byId('panelBody').innerHTML=p.body;byId('sidePanel').hidden=false;document.body.style.overflow='hidden';}
   function closePanel(){byId('sidePanel').hidden=true;document.body.style.overflow='';}
   document.addEventListener('click',event=>{
     if(event.target.closest('#manageDownloadData')){closePanel();byId('downloadCsv')?.click();return;}
+    if(event.target.closest('#manageDownloadExcel')){closePanel();byId('downloadExcel')?.click();return;}
     if(event.target.closest('#manageDownloadReport')){closePanel();if(!document.querySelector('.results-step')?.classList.contains('is-active')){alertFriendly('Primero termina tu Ruta para preparar el reporte.');return;}byId('printReport')?.click();return;}
     if(event.target.closest('#clearRetirementData')){if(!window.confirm('¿Deseas comenzar un nuevo análisis? Se eliminarán únicamente los datos de Mi Ruta de Retiro.'))return;localStorage.removeItem(STORAGE_KEY);closePanel();window.location.reload();return;}
     if(event.target.closest('#clearAllGarbaData')){if(!window.confirm('¿Deseas eliminar toda la información de GarBa Intelligence guardada en este navegador?'))return;Object.keys(localStorage).filter(k=>k.startsWith('garbaIntelligence.')).forEach(k=>localStorage.removeItem(k));window.location.replace('../');return;}

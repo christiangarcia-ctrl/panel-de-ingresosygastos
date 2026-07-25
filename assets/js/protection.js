@@ -301,13 +301,66 @@
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }), url = URL.createObjectURL(blob), a = document.createElement('a');
     a.href = url; a.download = `radar-proteccion-${firstName.toLowerCase()}.csv`; a.click(); URL.revokeObjectURL(url);
   });
+  byId('downloadExcel').addEventListener('click', () => {
+    if (typeof XLSX === 'undefined') { alertFriendly('No se pudo cargar el motor de Excel. Intenta de nuevo en unos segundos.'); return; }
+    const { list, overall } = window.__lastResults || computeAllScores();
+    const ins = list.find(c => c.key === 'insurance');
+    const summaryRows = [
+      ['Radar de Protección Familiar', firstName],
+      ['Fecha', new Date().toLocaleDateString('es-MX')],
+      [],
+      ['Puntaje general', `${overall}/100`],
+      [],
+      ['Área', 'Puntaje /100'],
+      ...list.map(c => [c.label, c.score]),
+      [],
+      ['Cobertura de vida sugerida (DIME)', ins.target],
+      ['Cobertura de vida actual', ins.current],
+      ['Diferencia', Math.max(0, ins.target - ins.current)],
+      [],
+      ['Esta lectura usa supuestos simples a partir de tus respuestas y no representa una garantía ni sustituye asesoría personalizada.']
+    ];
+    const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+    wsSummary['!cols'] = [{ wch: 36 }, { wch: 20 }];
+
+    const detailRows = [
+      ['Campo', 'Valor'],
+      ['Perspectiva', state.scope === 'individual' ? 'Individual' : state.scope === 'couple' ? 'Pareja' : 'Hogar'],
+      ['Gastos mensuales aproximados', num(state.monthlyExpenses)],
+      ['Ahorro líquido disponible', num(state.liquidSavings)],
+      ['Seguro de vida actual', state.hasLifeInsurance === 'yes' ? num(state.lifeInsuranceAmount) : 0],
+      ['Cuenta con GMM', state.hasGMM === 'yes' ? 'Sí' : 'No'],
+      ['Cuenta con seguro de incapacidad', state.hasDisability === 'yes' ? 'Sí' : 'No'],
+      ['Ingreso mensual', num(state.monthlyIncome)],
+      ['Dependientes económicos', num(state.dependents)],
+      ['Protección de ingreso ante incapacidad', state.incomeProtection === 'covered' ? 'Cubierto' : state.incomeProtection === 'partial' ? 'Parcial' : 'Sin cobertura'],
+      ['Seguro de hogar', state.hasHomeInsurance === 'yes' ? 'Sí' : 'No'],
+      ['Saldo pendiente de hipoteca', num(state.mortgageBalance)],
+      ['Hipoteca protegida ante fallecimiento', state.mortgageProtected === 'yes' ? 'Sí' : 'No'],
+      ['Hijos o dependientes en edad escolar', state.hasChildren === 'yes' ? 'Sí' : 'No'],
+      ['Fondo estimado de educación necesario', num(state.estimatedEducationCost)],
+      ['Ya tiene fondo de educación', state.hasEducationFund === 'yes' ? 'Sí' : 'No'],
+      ['Deuda total actual', num(state.totalDebts)],
+      ['Deudas cubiertas ante imprevisto', state.debtsProtected === 'yes' ? 'Sí' : 'No'],
+      ['Tiene testamento', state.hasWill === 'yes' ? 'Sí' : 'No'],
+      ['Beneficiarios actualizados', state.beneficiariesUpdated === 'yes' ? 'Sí' : state.beneficiariesUpdated === 'notsure' ? 'No estoy seguro' : 'No'],
+      ['Alguien de confianza conoce los documentos', state.someoneKnowsDocs === 'yes' ? 'Sí' : 'No']
+    ];
+    const wsDetail = XLSX.utils.aoa_to_sheet(detailRows);
+    wsDetail['!cols'] = [{ wch: 40 }, { wch: 20 }];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Radar de Protección');
+    XLSX.utils.book_append_sheet(wb, wsDetail, 'Detalle de respuestas');
+    XLSX.writeFile(wb, `radar-proteccion-${firstName.toLowerCase()}.xlsx`);
+  });
   byId('printReport').addEventListener('click', () => window.print());
 
   const panels = {
     guide: { kicker: 'Guía rápida', title: 'Cómo llenar tu Radar', body: '<p>Usa cifras aproximadas; no necesitas cuentas exactas para empezar.</p><p>Si algo no aplica a tu situación (por ejemplo, no tienes hijos), solo sigue adelante — el radar lo interpreta correctamente.</p><p>Tus avances se guardan en este dispositivo.</p>' },
     privacy: { kicker: 'Privacidad', title: 'Tu información es tuya', body: '<p>Tus respuestas se almacenan únicamente en este navegador mediante almacenamiento local.</p><p>GarBa Intelligence no recibe ni almacena estos datos en una base de datos.</p>' },
     scopeHelp: { kicker: 'Perspectiva', title: 'Individual, pareja u hogar', body: '<p>Esto solo ayuda a interpretar correctamente tus cifras. Puedes cambiarlo después si tu situación cambia.</p>' },
-    manageData: { kicker: 'Tu información', title: 'Administrar mi información', body: `<p class="manage-intro">Tú tienes el control. Elige qué deseas hacer con la información guardada en este dispositivo.</p><div class="manage-actions"><button type="button" class="manage-action" id="manageDownloadData"><span class="manage-action__icon">↓</span><span><strong>Descargar mis datos</strong><small>Guarda una copia en CSV compatible con Excel.</small></span><i>→</i></button><button type="button" class="manage-action" id="manageDownloadReport"><span class="manage-action__icon">▤</span><span><strong>Descargar mi reporte</strong><small>Imprime o guarda como PDF tu lectura actual.</small></span><i>→</i></button><button type="button" class="manage-action manage-action--restart" id="clearProtectionData"><span class="manage-action__icon">↻</span><span><strong>Comenzar un nuevo análisis</strong><small>Elimina únicamente la información del Radar de Protección Familiar.</small></span><i>→</i></button><button type="button" class="manage-action manage-action--danger" id="clearAllGarbaData"><span class="manage-action__icon">⌫</span><span><strong>Eliminar toda mi información</strong><small>Borra el acceso y los datos de todas las herramientas.</small></span><i>→</i></button><button type="button" class="manage-action" id="changeGarbaUser"><span class="manage-action__icon">◎</span><span><strong>Cambiar de usuario</strong><small>Conserva los análisis, pero vuelve a la bienvenida.</small></span><i>→</i></button></div><p class="manage-footnote">Tus datos permanecen localmente en este dispositivo.</p>` }
+    manageData: { kicker: 'Tu información', title: 'Administrar mi información', body: `<p class="manage-intro">Tú tienes el control. Elige qué deseas hacer con la información guardada en este dispositivo.</p><div class="manage-actions"><button type="button" class="manage-action" id="manageDownloadData"><span class="manage-action__icon">↓</span><span><strong>Descargar mis datos</strong><small>Guarda una copia en CSV compatible con Excel.</small></span><i>→</i></button><button type="button" class="manage-action" id="manageDownloadExcel"><span class="manage-action__icon">▦</span><span><strong>Descargar Excel</strong><small>Incluye tu puntaje por área y el detalle de tus respuestas.</small></span><i>→</i></button><button type="button" class="manage-action" id="manageDownloadReport"><span class="manage-action__icon">▤</span><span><strong>Descargar mi reporte</strong><small>Imprime o guarda como PDF tu lectura actual.</small></span><i>→</i></button><button type="button" class="manage-action manage-action--restart" id="clearProtectionData"><span class="manage-action__icon">↻</span><span><strong>Comenzar un nuevo análisis</strong><small>Elimina únicamente la información del Radar de Protección Familiar.</small></span><i>→</i></button><button type="button" class="manage-action manage-action--danger" id="clearAllGarbaData"><span class="manage-action__icon">⌫</span><span><strong>Eliminar toda mi información</strong><small>Borra el acceso y los datos de todas las herramientas.</small></span><i>→</i></button><button type="button" class="manage-action" id="changeGarbaUser"><span class="manage-action__icon">◎</span><span><strong>Cambiar de usuario</strong><small>Conserva los análisis, pero vuelve a la bienvenida.</small></span><i>→</i></button></div><p class="manage-footnote">Tus datos permanecen localmente en este dispositivo.</p>` }
   };
   function openPanel(key) {
     const p = panels[key] || panels.guide;
@@ -318,6 +371,7 @@
 
   document.addEventListener('click', event => {
     if (event.target.closest('#manageDownloadData')) { closePanel(); byId('downloadCsv')?.click(); return; }
+    if (event.target.closest('#manageDownloadExcel')) { closePanel(); byId('downloadExcel')?.click(); return; }
     if (event.target.closest('#manageDownloadReport')) {
       closePanel();
       if (!document.querySelector('.results-step')?.classList.contains('is-active')) { alertFriendly('Primero termina tu Radar para preparar el reporte.'); return; }
